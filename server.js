@@ -19,7 +19,7 @@ const ADMIN_ID = 1743237033; // Твой ID
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static('public'));
+app.use(express.static(__dirname));
 
 // --- ПОДКЛЮЧЕНИЕ К MONGODB ---
 mongoose.connect(MONGO_URI)
