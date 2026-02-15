@@ -34,12 +34,8 @@ const bot = new Telegraf(BOT_TOKEN);
 const isAdmin = (ctx) => ctx.from.id === ADMIN_ID;
 
 // Старт 
-bot.command('start', async(ctx) => {
-    ctx.reply("Добро пожаловать в игру SPINS! Нажмите кнопку ниже, чтобы начать.", {
-        reply_markup: {
-            inline_keyboard: [[{ text: "🚀 Играть сейчас", web_app: { url: "https://spins-project.onrender.com"  }]]
-        }
-    });
+bot.start((ctx) => {
+    ctx.reply(`Добро пожаловать в SPINS! Нажми на кнопку "Menu", чтобы начать.`);
 });
 
 // 1. Общая статистика: /stats
