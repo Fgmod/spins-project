@@ -37,7 +37,7 @@ const isAdmin = (ctx) => ctx.from.id === ADMIN_ID;
 bot.command('start', async(ctx) => {
     ctx.reply("Добро пожаловать в игру SPINS! Нажмите кнопку ниже, чтобы начать.", {
         reply_markup: {
-            inline_keyboard: [[{ text: "🚀 Играть сейчас", web_app: { url: "https://spins-project-167y.onrender.com" } }]]
+            inline_keyboard: [[{ text: "🚀 Играть сейчас", web_app: { url: "https://spins-project.onrender.com"  }]]
         }
     });
 });
