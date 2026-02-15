@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>SPINS</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+    <div id="app">
+        <header class="header">
+            <div class="user-info">
+                <div style="font-size: 12px; opacity: 0.7;">Welcome,</div>
+                <div id="username" style="font-weight: bold;">Loading...</div>
+            </div>
+            <div class="balance-badge">
+                💎 <span id="balance">0</span> TON
+            </div>
+        </header>
+
+        <div id="screen-spins" class="screen active">
+            <div class="wheel-container">
+                <canvas id="wheel" width="300" height="300"></canvas>
+                <div class="wheel-arrow">TAP!</div>
+            </div>
+            
+            <div class="controls">
+                <div class="bet-selector">
+                    <button class="bet-btn" onclick="changeBet(-100)">-</button>
+                    <span id="currentBet">100</span>
+                    <button class="bet-btn" onclick="changeBet(100)">+</button>
+                </div>
+                <button id="spinBtn" class="main-btn">SPIN FOR <span id="btnAmount">100</span> TON</button>
+                <div style="margin-top: 15px; font-size: 12px; color: #666;">
+                    Playing with 3 bots • Total Pot: x4
+                </div>
+            </div>
+        </div>
+
+        <div id="screen-pvp" class="screen">
+            <h2 style="margin-bottom: 10px;">Multiplayer Lobby</h2>
+            <div style="color: #666; font-size: 12px; margin-bottom: 20px;">
+                Online: <span id="onlineCount">0</span>
+            </div>
+
+            <button class="create-room-btn" onclick="createRoom()">
+                + Create Private Room (1000 TON)
+            </button>
+            
+            <h3 style="font-size: 14px; margin-bottom: 10px;">Public Rooms</h3>
+            <div id="roomList" class="room-list">
+                </div>
+        </div>
+
+        <div id="screen-room" class="screen">
+            <button onclick="leaveRoom()" style="background:none; border:none; color:#666; margin-bottom:10px;">← Leave</button>
+            <h2 id="roomIdDisplay">Room #...</h2>
+            
+            <div class="players-grid" id="playersGrid"></div>
+            
+            <div style="margin-top: auto; padding: 20px 0;">
+                <div style="text-align: center; margin-bottom: 10px; color: #888;" id="roomStatus">Waiting for bets...</div>
+                <button id="readyBtn" class="main-btn" onclick="sendReady()">PLACE BET (1000)</button>
+            </div>
+        </div>
+
+        <nav class="bottom-nav">
+            <button class="nav-item active" onclick="switchTab('spins')">
+                <span class="nav-icon">🎁</span> Spins
+            </button>
+            <button class="nav-item" onclick="switchTab('pvp')">
+                <span class="nav-icon">⚔️</span> PvP
+            </button>
+            <button class="nav-item" onclick="alert('Market coming soon')">
+                <span class="nav-icon">🛍️</span> Market
+            </button>
+            <button class="nav-item" onclick="alert('Profile coming soon')">
+                <span class="nav-icon">👤</span> Profile
+            </button>
+        </nav>
+    </div>
+
+    <div id="resultModal" class="modal-overlay">
+        <div class="modal">
+            <h2 id="modalTitle">YOU WON!</h2>
+            <div id="modalAmount" class="win-amount">+400 TON</div>
+            <p id="modalMsg" style="color:#888;">Winner: You</p>
+            <button class="main-btn" onclick="closeModal()">CLAIM</button>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
