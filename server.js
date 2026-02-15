@@ -38,20 +38,38 @@ bot.start((ctx) => {
     ctx.reply(`Добро пожаловать в SPINS! Нажми на кнопку "Menu", чтобы начать.`);
 });
 
-// 1. Общая статистика: /stats
 bot.command('stats', async (ctx) => {
-    if (!isAdmin(ctx)) return;
-    const count = await User.countDocuments();
-    const topUsers = await User.find().sort({ balance: -1 }).limit(5);
+    if (ctx.from.id !== ADMIN_ID) return;
     
-    let msg = `📊 **Общая статистика игры**\n\n`;
-    msg += `👥 Всего игроков: ${count}\n`;
-    msg += `🌐 Онлайн сейчас: ${io.engine.clientsCount}\n\n`;
-    msg += `💰 **Топ-5 по балансу:**\n`;
-    topUsers.forEach((u, i) => {
-        msg += `${i+1}. ${u.username || u.firstName} (ID: \`${u.telegramId}\`): ${u.balance.toFixed(2)} TON\n`;
-    });
-    ctx.replyWithMarkdown(msg);
+    try {
+        const allUsers = await User.find().sort({ balance: -1 });
+        
+        let msg = `<b>📊 ПОЛНЫЙ СПИСОК ИГРОКОВ:</b>\n\n`;
+        
+        allUsers.forEach((u, i) => {
+            const isOnline = Array.from(io.sockets.sockets.values()).some(s => s.userId === u.telegramId);
+            const status = isOnline ? "🟢 Online" : "🔴 Offline";
+            
+            // Экранируем имя, чтобы символы < > & не ломали HTML
+            const safeName = (u.username || u.firstName || 'Unknown')
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;");
+
+            msg += `${i + 1}. ${safeName} | <code>${u.telegramId}</code> | <b>${u.balance.toFixed(2)} TON</b> | ${status}\n`;
+        });
+
+        // Отправляем как HTML
+        if (msg.length > 4000) {
+            await ctx.replyWithHTML(msg.substring(0, 4000));
+            await ctx.replyWithHTML(msg.substring(4000));
+        } else {
+            await ctx.replyWithHTML(msg);
+        }
+    } catch (err) {
+        console.error("Ошибка в команде stats:", err);
+        ctx.reply("Произошла ошибка при формировании статистики.");
+    }
 });
 
 // 2. Проверка игрока: /check [ID]
