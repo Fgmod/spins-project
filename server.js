@@ -21,7 +21,10 @@ app.use(express.json());
 app.use(express.static(__dirname));
 
 // --- ПОДКЛЮЧЕНИЕ К MONGODB ---
-mongoose.connect(MONGO_URI)
+mongoose.connect(MONGO_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+})
     .then(() => console.log('✅ Connected to MongoDB'))
     .catch(err => console.error('❌ MongoDB Error:', err));
 
@@ -44,32 +47,41 @@ const STATUES = [
     { id: 'crypto_wolf', name: 'Крипто Волк', rarity: 'epic', emoji: '🐺', dropRate: 1, bonus: 1.2, image: 'https://i.imgur.com/wolf.png' }
 ];
 
-// Схема пользователя
+// --- СХЕМА ДЛЯ ПОСЛЕДНИХ ИГР ---
+const LastGameSchema = new mongoose.Schema({
+    date: { type: Date, default: Date.now },
+    type: { type: String, enum: ['bot', 'pvp'] },
+    result: { type: String, enum: ['win', 'loss'] },
+    amount: Number
+}, { _id: false });
+
+// --- СХЕМА ДЛЯ ИНВЕНТАРЯ ---
+const InventoryItemSchema = new mongoose.Schema({
+    statueId: String,
+    count: { type: Number, default: 1 }
+}, { _id: false });
+
+// --- СХЕМА ПОЛЬЗОВАТЕЛЯ (ИСПРАВЛЕННАЯ) ---
 const UserSchema = new mongoose.Schema({
     telegramId: { type: Number, required: true, unique: true },
-    username: String,
-    firstName: String,
+    username: { type: String, default: '' },
+    firstName: { type: String, default: '' },
     balance: { type: Number, default: 1000 },
-    inventory: [{
-        statueId: String,
-        count: { type: Number, default: 1 }
-    }],
+    inventory: [InventoryItemSchema],
     completedCollections: [String],
-    stats: { 
-        wins: { type: Number, default: 0 }, 
+    stats: {
+        wins: { type: Number, default: 0 },
         games: { type: Number, default: 0 },
         totalWon: { type: Number, default: 0 },
-        lastGames: [{
-            date: Date,
-            type: String,
-            result: String,
-            amount: Number
-        }]
+        lastGames: [LastGameSchema]
     },
     rank: { type: String, default: 'Новичок' },
     rankColor: { type: String, default: '#8e8e93' }
+}, {
+    timestamps: true
 });
 
+// Метод для обновления ранга
 UserSchema.methods.updateRank = function() {
     for (let i = RANKS.length - 1; i >= 0; i--) {
         if (this.balance >= RANKS[i].minBalance) {
@@ -81,6 +93,7 @@ UserSchema.methods.updateRank = function() {
     return this.rank;
 };
 
+// Метод для получения бонуса от коллекций
 UserSchema.methods.getCollectionBonus = function() {
     let bonus = 1.0;
     this.completedCollections.forEach(collection => {
@@ -180,130 +193,157 @@ bot.launch();
 let rooms = {};
 
 // --- API ROUTES ---
+
+// Авторизация / Создание профиля
 app.post('/api/auth', async (req, res) => {
-    const { id, username, first_name } = req.body;
     try {
+        const { id, username, first_name } = req.body;
+        
+        if (!id) {
+            return res.status(400).json({ error: 'ID is required' });
+        }
+
         let user = await User.findOne({ telegramId: id });
+        
         if (!user) {
             user = new User({ 
                 telegramId: id, 
-                username, 
-                firstName: first_name,
+                username: username || '',
+                firstName: first_name || '',
                 rank: id === ADMIN_ID ? 'Шейх' : 'Новичок',
                 rankColor: id === ADMIN_ID ? '#ff2d55' : '#8e8e93'
             });
             await user.save();
+        } else {
+            // Обновляем username если он изменился
+            if (username) user.username = username;
+            if (first_name) user.firstName = first_name;
+            user.updateRank();
+            await user.save();
         }
-        
-        user.updateRank();
-        await user.save();
         
         res.json(user);
     } catch (e) {
+        console.error('Auth error:', e);
         res.status(500).json({ error: 'Database error' });
     }
 });
 
+// Игра с ботами (Симуляция общего банка)
 app.post('/api/bot-game', async (req, res) => {
-    const { id, bet } = req.body;
-    
-    const user = await User.findOne({ telegramId: id });
-    if (!user || user.balance < bet) return res.json({ error: "Недостаточно средств" });
-
-    user.balance -= bet;
-
-    // Создаем ботов с цветами
-    const botNames = ['Alex', 'Maria', 'John', 'Emma', 'Mike', 'Sarah'];
-    const botColors = ['#FF2D55', '#007AFF', '#34C759', '#FF9500', '#9D4EDD', '#FFD700'];
-    
-    const bots = [];
-    for (let i = 0; i < 5; i++) {
-        bots.push({
-            name: botNames[Math.floor(Math.random() * botNames.length)],
-            color: botColors[Math.floor(Math.random() * botColors.length)],
-            bet: bet
-        });
-    }
-    
-    const totalPot = bet * (bots.length + 1);
-    
-    // Повышаем шанс выигрыша до 40%
-    const participants = [user, ...bots];
-    const userWinChance = 0.4;
-    
-    let winner;
-    if (Math.random() < userWinChance) {
-        winner = user;
-    } else {
-        winner = bots[Math.floor(Math.random() * bots.length)];
-    }
-    
-    const isWin = winner === user;
-    let winAmount = 0;
-
-    if (isWin) {
-        winAmount = totalPot;
-        const collectionBonus = user.getCollectionBonus();
-        winAmount = Math.floor(winAmount * collectionBonus);
+    try {
+        const { id, bet } = req.body;
         
-        user.balance += winAmount;
-        user.stats.wins++;
-        user.stats.totalWon += winAmount;
-    }
+        const user = await User.findOne({ telegramId: id });
+        if (!user) return res.status(404).json({ error: "Пользователь не найден" });
+        if (user.balance < bet) return res.json({ error: "Недостаточно средств" });
 
-    // Шанс 5% на выпадение статуи
-    if (!isWin && Math.random() < 0.05) {
-        const randomStatue = STATUES[Math.floor(Math.random() * STATUES.length)];
-        const existingItem = user.inventory.find(i => i.statueId === randomStatue.id);
+        // Списываем ставку
+        user.balance -= bet;
+
+        // Создаем ботов с цветами
+        const botNames = ['Alex', 'Maria', 'John', 'Emma', 'Mike', 'Sarah'];
+        const botColors = ['#FF2D55', '#007AFF', '#34C759', '#FF9500', '#9D4EDD', '#FFD700'];
         
-        if (existingItem) {
-            existingItem.count++;
+        const bots = [];
+        for (let i = 0; i < 5; i++) {
+            bots.push({
+                name: botNames[Math.floor(Math.random() * botNames.length)],
+                color: botColors[Math.floor(Math.random() * botColors.length)],
+                bet: bet
+            });
+        }
+        
+        const totalPot = bet * (bots.length + 1);
+        
+        // Повышаем шанс выигрыша до 40%
+        const userWinChance = 0.4;
+        
+        let winner;
+        if (Math.random() < userWinChance) {
+            winner = { name: user.username || user.firstName || 'You', color: user.rankColor, isUser: true };
         } else {
-            user.inventory.push({ statueId: randomStatue.id, count: 1 });
+            winner = bots[Math.floor(Math.random() * bots.length)];
+            winner.isUser = false;
         }
         
-        // Проверка на завершение коллекции
-        const collectionStatues = STATUES.map(s => s.id);
-        const hasAll = collectionStatues.every(statueId => 
-            user.inventory.some(i => i.statueId === statueId && i.count > 0)
-        );
-        
-        if (hasAll && !user.completedCollections.includes('all')) {
-            user.completedCollections.push('all');
+        const isWin = winner.isUser === true;
+        let winAmount = 0;
+
+        if (isWin) {
+            winAmount = totalPot;
+            const collectionBonus = user.getCollectionBonus();
+            winAmount = Math.floor(winAmount * collectionBonus);
+            
+            user.balance += winAmount;
+            user.stats.wins++;
+            user.stats.totalWon += winAmount;
         }
+
+        // Добавляем запись в историю игр
+        user.stats.lastGames.push({
+            date: new Date(),
+            type: 'bot',
+            result: isWin ? 'win' : 'loss',
+            amount: isWin ? winAmount : -bet
+        });
+
+        // Ограничиваем историю до 10 игр
+        if (user.stats.lastGames.length > 10) {
+            user.stats.lastGames = user.stats.lastGames.slice(-10);
+        }
+
+        user.stats.games++;
+        user.updateRank();
+
+        // Шанс 5% на выпадение статуи при проигрыше
+        let droppedStatue = null;
+        if (!isWin && Math.random() < 0.05) {
+            const randomStatue = STATUES[Math.floor(Math.random() * STATUES.length)];
+            const existingItem = user.inventory.find(i => i.statueId === randomStatue.id);
+            
+            if (existingItem) {
+                existingItem.count++;
+            } else {
+                user.inventory.push({ statueId: randomStatue.id, count: 1 });
+            }
+            
+            droppedStatue = randomStatue;
+            
+            // Проверка на завершение коллекции
+            const collectionStatues = STATUES.map(s => s.id);
+            const hasAll = collectionStatues.every(statueId => 
+                user.inventory.some(i => i.statueId === statueId && i.count > 0)
+            );
+            
+            if (hasAll && !user.completedCollections.includes('all')) {
+                user.completedCollections.push('all');
+            }
+        }
+
+        await user.save();
+
+        res.json({
+            isWin,
+            winner: winner.name,
+            winnerColor: winner.color,
+            pot: totalPot,
+            newBalance: user.balance,
+            participants: [
+                { name: user.username || user.firstName || 'You', color: user.rankColor },
+                ...bots.map(b => ({ name: b.name, color: b.color }))
+            ],
+            stopAngle: Math.floor(Math.random() * 360),
+            newRank: user.rank,
+            droppedStatue: droppedStatue
+        });
+    } catch (e) {
+        console.error('Bot game error:', e);
+        res.status(500).json({ error: 'Internal server error' });
     }
-
-    user.stats.games++;
-    user.stats.lastGames.push({
-        date: new Date(),
-        type: 'bot',
-        result: isWin ? 'win' : 'loss',
-        amount: isWin ? winAmount : -bet
-    });
-    
-    if (user.stats.lastGames.length > 10) {
-        user.stats.lastGames.shift();
-    }
-
-    user.updateRank();
-    await user.save();
-
-    res.json({
-        isWin,
-        winner: winner.name || winner.username,
-        winnerColor: winner.color || user.rankColor,
-        pot: totalPot,
-        newBalance: user.balance,
-        participants: participants.map(p => ({
-            name: p.name || p.username,
-            color: p.color || p.rankColor
-        })),
-        stopAngle: Math.floor(Math.random() * 360),
-        newRank: user.rank,
-        droppedStatue: !isWin && Math.random() < 0.05 ? randomStatue : null
-    });
 });
 
+// Получение маркета
 app.get('/api/market', async (req, res) => {
     try {
         const users = await User.find();
@@ -316,7 +356,7 @@ app.get('/api/market', async (req, res) => {
                     marketItems.push({
                         id: `${user.telegramId}_${statue.id}`,
                         sellerId: user.telegramId,
-                        sellerName: user.username || user.firstName,
+                        sellerName: user.username || user.firstName || 'Unknown',
                         statue: statue,
                         count: item.count,
                         price: Math.floor(100 * (statue.rarity === 'legendary' ? 10 : statue.rarity === 'epic' ? 5 : 2))
@@ -327,10 +367,12 @@ app.get('/api/market', async (req, res) => {
         
         res.json(marketItems);
     } catch (e) {
+        console.error('Market error:', e);
         res.status(500).json({ error: 'Database error' });
     }
 });
 
+// Покупка в маркете
 app.post('/api/market/buy', async (req, res) => {
     const { buyerId, sellerId, statueId, price } = req.body;
     
@@ -387,37 +429,44 @@ io.on('connection', (socket) => {
     });
 
     socket.on('create_room', async (betAmount) => {
-        const user = await User.findOne({ telegramId: currentUser.telegramId });
-        const roomId = Math.random().toString(36).substring(2, 7).toUpperCase();
-        
-        const playerColor = user.rank === 'Шейх' ? '#ff2d55' : 
-                           user.rank === 'Инвестор' ? '#ffd700' :
-                           user.rank === 'Лудоман' ? '#29b6f6' : '#8e8e93';
-        
-        rooms[roomId] = {
-            id: roomId,
-            creator: currentUser.telegramId,
-            bet: betAmount,
-            players: [{
-                socketId: socket.id,
-                user: {
-                    ...currentUser,
-                    rank: user.rank,
-                    rankColor: user.rankColor,
-                    color: playerColor
-                },
-                ready: false
-            }],
-            pot: 0,
-            status: 'waiting',
-            playerColors: {}
-        };
-        
-        rooms[roomId].playerColors[currentUser.telegramId] = playerColor;
-        currentRoomId = roomId;
-        socket.join(roomId);
-        socket.emit('room_joined', rooms[roomId]);
-        io.to('global_lobby').emit('update_rooms', getPublicRooms());
+        try {
+            const user = await User.findOne({ telegramId: currentUser.telegramId });
+            if (!user) return;
+            
+            const roomId = Math.random().toString(36).substring(2, 7).toUpperCase();
+            
+            const playerColor = user.rank === 'Шейх' ? '#ff2d55' : 
+                               user.rank === 'Инвестор' ? '#ffd700' :
+                               user.rank === 'Лудоман' ? '#29b6f6' : '#8e8e93';
+            
+            rooms[roomId] = {
+                id: roomId,
+                creator: currentUser.telegramId,
+                bet: betAmount,
+                players: [{
+                    socketId: socket.id,
+                    user: {
+                        telegramId: currentUser.telegramId,
+                        username: currentUser.username || currentUser.firstName || 'Player',
+                        rank: user.rank,
+                        rankColor: user.rankColor,
+                        color: playerColor
+                    },
+                    ready: false
+                }],
+                pot: 0,
+                status: 'waiting',
+                playerColors: {}
+            };
+            
+            rooms[roomId].playerColors[currentUser.telegramId] = playerColor;
+            currentRoomId = roomId;
+            socket.join(roomId);
+            socket.emit('room_joined', rooms[roomId]);
+            io.to('global_lobby').emit('update_rooms', getPublicRooms());
+        } catch (e) {
+            console.error('Create room error:', e);
+        }
     });
 
     socket.on('get_rooms', () => {
@@ -425,57 +474,76 @@ io.on('connection', (socket) => {
     });
 
     socket.on('join_room', async (roomId) => {
-        const room = rooms[roomId];
-        const user = await User.findOne({ telegramId: currentUser.telegramId });
-        
-        if (room && room.status === 'waiting' && room.players.length < 6) {
-            const playerColor = user.rank === 'Шейх' ? '#ff2d55' : 
-                               user.rank === 'Инвестор' ? '#ffd700' :
-                               user.rank === 'Лудоман' ? '#29b6f6' : '#8e8e93';
+        try {
+            const room = rooms[roomId];
+            if (!room) {
+                socket.emit('error', 'Комната не найдена');
+                return;
+            }
             
-            room.players.push({
-                socketId: socket.id,
-                user: {
-                    ...currentUser,
-                    rank: user.rank,
-                    rankColor: user.rankColor,
-                    color: playerColor
-                },
-                ready: false
-            });
+            const user = await User.findOne({ telegramId: currentUser.telegramId });
+            if (!user) return;
             
-            room.playerColors[currentUser.telegramId] = playerColor;
-            currentRoomId = roomId;
-            socket.join(roomId);
-            io.to(roomId).emit('room_update', room);
-            io.to('global_lobby').emit('update_rooms', getPublicRooms());
-        } else {
-            socket.emit('error', 'Комната полна или игра уже идет');
+            if (room.status === 'waiting' && room.players.length < 6) {
+                const playerColor = user.rank === 'Шейх' ? '#ff2d55' : 
+                                   user.rank === 'Инвестор' ? '#ffd700' :
+                                   user.rank === 'Лудоман' ? '#29b6f6' : '#8e8e93';
+                
+                room.players.push({
+                    socketId: socket.id,
+                    user: {
+                        telegramId: currentUser.telegramId,
+                        username: currentUser.username || currentUser.firstName || 'Player',
+                        rank: user.rank,
+                        rankColor: user.rankColor,
+                        color: playerColor
+                    },
+                    ready: false
+                });
+                
+                room.playerColors[currentUser.telegramId] = playerColor;
+                currentRoomId = roomId;
+                socket.join(roomId);
+                io.to(roomId).emit('room_update', room);
+                io.to('global_lobby').emit('update_rooms', getPublicRooms());
+            } else {
+                socket.emit('error', 'Комната полна или игра уже идет');
+            }
+        } catch (e) {
+            console.error('Join room error:', e);
         }
     });
 
     socket.on('player_ready', async () => {
-        if (!currentRoomId || !rooms[currentRoomId]) return;
-        const room = rooms[currentRoomId];
-        
-        const dbUser = await User.findOne({ telegramId: currentUser.telegramId });
-        if (dbUser.balance < room.bet) {
-            socket.emit('error', 'Недостаточно денег для ставки!');
-            return;
-        }
+        try {
+            if (!currentRoomId || !rooms[currentRoomId]) return;
+            const room = rooms[currentRoomId];
+            
+            const dbUser = await User.findOne({ telegramId: currentUser.telegramId });
+            if (!dbUser) return;
+            
+            if (dbUser.balance < room.bet) {
+                socket.emit('error', 'Недостаточно денег для ставки!');
+                return;
+            }
 
-        dbUser.balance -= room.bet;
-        await dbUser.save();
+            dbUser.balance -= room.bet;
+            await dbUser.save();
 
-        const player = room.players.find(p => p.socketId === socket.id);
-        player.ready = true;
-        room.pot += room.bet;
+            const player = room.players.find(p => p.socketId === socket.id);
+            if (player) {
+                player.ready = true;
+                room.pot += room.bet;
+            }
 
-        io.to(currentRoomId).emit('room_update', room);
-        socket.emit('balance_update', dbUser.balance);
+            io.to(currentRoomId).emit('room_update', room);
+            socket.emit('balance_update', dbUser.balance);
 
-        if (room.players.length >= 2 && room.players.every(p => p.ready)) {
-            startPvPGame(room);
+            if (room.players.length >= 2 && room.players.every(p => p.ready)) {
+                await startPvPGame(room);
+            }
+        } catch (e) {
+            console.error('Player ready error:', e);
         }
     });
 
@@ -513,61 +581,77 @@ io.on('connection', (socket) => {
 });
 
 async function startPvPGame(room) {
-    room.status = 'playing';
-    io.to(room.id).emit('game_start', { pot: room.pot, players: room.players });
+    try {
+        room.status = 'playing';
+        io.to(room.id).emit('game_start', { pot: room.pot, players: room.players });
 
-    setTimeout(async () => {
-        const winnerIndex = Math.floor(Math.random() * room.players.length);
-        const winner = room.players[winnerIndex];
-        
-        const dbWinner = await User.findOne({ telegramId: winner.user.telegramId });
-        dbWinner.balance += room.pot;
-        dbWinner.stats.wins++;
-        dbWinner.stats.totalWon += room.pot;
-        dbWinner.stats.lastGames.push({
-            date: new Date(),
-            type: 'pvp',
-            result: 'win',
-            amount: room.pot
-        });
-        
-        dbWinner.updateRank();
-        await dbWinner.save();
-
-        const loserUpdates = [];
-        room.players.forEach(async (p) => {
-            if (p.user.telegramId !== winner.user.telegramId) {
-                const loser = await User.findOne({ telegramId: p.user.telegramId });
-                if (loser) {
-                    loser.stats.lastGames.push({
+        setTimeout(async () => {
+            try {
+                const winnerIndex = Math.floor(Math.random() * room.players.length);
+                const winner = room.players[winnerIndex];
+                
+                const dbWinner = await User.findOne({ telegramId: winner.user.telegramId });
+                if (dbWinner) {
+                    dbWinner.balance += room.pot;
+                    dbWinner.stats.wins++;
+                    dbWinner.stats.totalWon += room.pot;
+                    dbWinner.stats.lastGames.push({
                         date: new Date(),
                         type: 'pvp',
-                        result: 'loss',
-                        amount: -room.bet
+                        result: 'win',
+                        amount: room.pot
                     });
-                    loser.updateRank();
-                    loserUpdates.push(loser.save());
+                    
+                    if (dbWinner.stats.lastGames.length > 10) {
+                        dbWinner.stats.lastGames = dbWinner.stats.lastGames.slice(-10);
+                    }
+                    
+                    dbWinner.updateRank();
+                    await dbWinner.save();
                 }
+
+                // Обновляем статистику проигравших
+                for (const player of room.players) {
+                    if (player.user.telegramId !== winner.user.telegramId) {
+                        const loser = await User.findOne({ telegramId: player.user.telegramId });
+                        if (loser) {
+                            loser.stats.lastGames.push({
+                                date: new Date(),
+                                type: 'pvp',
+                                result: 'loss',
+                                amount: -room.bet
+                            });
+                            
+                            if (loser.stats.lastGames.length > 10) {
+                                loser.stats.lastGames = loser.stats.lastGames.slice(-10);
+                            }
+                            
+                            loser.updateRank();
+                            await loser.save();
+                        }
+                    }
+                }
+
+                io.to(room.id).emit('game_over', {
+                    winner: {
+                        ...winner.user,
+                        color: room.playerColors[winner.user.telegramId]
+                    },
+                    prize: room.pot,
+                    playerColors: room.playerColors
+                });
+
+                setTimeout(() => {
+                    delete rooms[room.id];
+                    io.to('global_lobby').emit('update_rooms', getPublicRooms());
+                }, 5000);
+            } catch (e) {
+                console.error('PvP game completion error:', e);
             }
-        });
-        
-        await Promise.all(loserUpdates);
-
-        io.to(room.id).emit('game_over', {
-            winner: {
-                ...winner.user,
-                color: room.playerColors[winner.user.telegramId]
-            },
-            prize: room.pot,
-            playerColors: room.playerColors
-        });
-
-        setTimeout(() => {
-            delete rooms[room.id];
-            io.to('global_lobby').emit('update_rooms', getPublicRooms());
         }, 5000);
-
-    }, 5000);
+    } catch (e) {
+        console.error('Start PvP game error:', e);
+    }
 }
 
 function getPublicRooms() {
@@ -577,9 +661,18 @@ function getPublicRooms() {
             id: r.id, 
             bet: r.bet, 
             players: r.players.length, 
-            creator: r.players[0].user.username,
-            creatorRank: r.players[0].user.rank
+            creator: r.players[0]?.user?.username || 'Unknown',
+            creatorRank: r.players[0]?.user?.rank || 'Новичок'
         }));
 }
+
+// Обработка ошибок
+process.on('uncaughtException', (err) => {
+    console.error('Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (err) => {
+    console.error('Unhandled Rejection:', err);
+});
 
 server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
