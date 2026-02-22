@@ -12,10 +12,9 @@ const io = new Server(server, { cors: { origin: "*" } });
 
 // --- КОНФИГУРАЦИЯ ---
 const PORT = process.env.PORT || 3000;
-// Вставь сюда свою строку от MongoDB Atlas, если запускаешь локально, или используй .env
-const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://makarychev887_db_user:VjHYgC26wBnnmMUW@cluster0.omk9t2w.mongodb.net/?appName=Cluster0'; 
+const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://makarychev887_db_user:VjHYgC26wBnnmMUW@cluster0.omk9t2w.mongodb.net/?appName=Cluster0';
 const BOT_TOKEN = process.env.BOT_TOKEN || '7904673285:AAFWIngrdaMhM47g8bmBFG4rv45zUfbS05A';
-const ADMIN_ID = 1743237033; // Твой ID
+const ADMIN_ID = 1743237033;
 
 app.use(cors());
 app.use(express.json());
@@ -28,12 +27,74 @@ mongoose.connect(MONGO_URI)
 
 const bot = new Telegraf(BOT_TOKEN);
 
-// --- АДМИН-ПАНЕЛЬ В ЧАТЕ ---
+// --- РАНГИ И ЛИГИ ---
+const RANKS = [
+    { name: 'Новичок', minBalance: 0, color: '#8e8e93', icon: '🌱', wheelGradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' },
+    { name: 'Лудоман', minBalance: 5000, color: '#29b6f6', icon: '🎲', wheelGradient: 'linear-gradient(135deg, #29b6f6 0%, #0288d1 100%)' },
+    { name: 'Инвестор', minBalance: 25000, color: '#ffd700', icon: '💎', wheelGradient: 'linear-gradient(135deg, #ffd700 0%, #ff8c00 100%)' },
+    { name: 'Шейх', minBalance: 100000, color: '#ff2d55', icon: '👑', wheelGradient: 'linear-gradient(135deg, #ff2d55 0%, #c41e3a 100%)' }
+];
 
-// Проверка на админа
+// --- КОЛЛЕКЦИОННЫЕ СТАТУИ (GACHA) ---
+const STATUES = [
+    { id: 'gold_durov', name: 'Золотой Дуров', rarity: 'rare', emoji: '👑', dropRate: 2, bonus: 0.5, image: 'https://i.imgur.com/golden.png' },
+    { id: 'diamond_hamster', name: 'Алмазный Хомяк', rarity: 'epic', emoji: '🐹', dropRate: 1.5, bonus: 1.0, image: 'https://i.imgur.com/diamond.png' },
+    { id: 'prison_steve', name: 'Тюремный Стив', rarity: 'common', emoji: '⛓️', dropRate: 5, bonus: 0.2, image: 'https://i.imgur.com/prison.png' },
+    { id: 'ton_king', name: 'TON Король', rarity: 'legendary', emoji: '⚡', dropRate: 0.5, bonus: 2.5, image: 'https://i.imgur.com/king.png' },
+    { id: 'crypto_wolf', name: 'Крипто Волк', rarity: 'epic', emoji: '🐺', dropRate: 1, bonus: 1.2, image: 'https://i.imgur.com/wolf.png' }
+];
+
+// Схема пользователя
+const UserSchema = new mongoose.Schema({
+    telegramId: { type: Number, required: true, unique: true },
+    username: String,
+    firstName: String,
+    balance: { type: Number, default: 1000 },
+    inventory: [{
+        statueId: String,
+        count: { type: Number, default: 1 }
+    }],
+    completedCollections: [String],
+    stats: { 
+        wins: { type: Number, default: 0 }, 
+        games: { type: Number, default: 0 },
+        totalWon: { type: Number, default: 0 },
+        lastGames: [{
+            date: Date,
+            type: String,
+            result: String,
+            amount: Number
+        }]
+    },
+    rank: { type: String, default: 'Новичок' },
+    rankColor: { type: String, default: '#8e8e93' }
+});
+
+UserSchema.methods.updateRank = function() {
+    for (let i = RANKS.length - 1; i >= 0; i--) {
+        if (this.balance >= RANKS[i].minBalance) {
+            this.rank = RANKS[i].name;
+            this.rankColor = RANKS[i].color;
+            break;
+        }
+    }
+    return this.rank;
+};
+
+UserSchema.methods.getCollectionBonus = function() {
+    let bonus = 1.0;
+    this.completedCollections.forEach(collection => {
+        const statue = STATUES.find(s => s.id === collection);
+        if (statue) bonus += statue.bonus / 100;
+    });
+    return bonus;
+};
+
+const User = mongoose.model('User', UserSchema);
+
+// --- ТЕЛЕГРАМ БОТ (АДМИН-ПАНЕЛЬ) ---
 const isAdmin = (ctx) => ctx.from.id === ADMIN_ID;
 
-// Старт 
 bot.start((ctx) => {
     ctx.reply(`Добро пожаловать в SPINS! Нажми на кнопку "Menu", чтобы начать.`);
 });
@@ -50,16 +111,14 @@ bot.command('stats', async (ctx) => {
             const isOnline = Array.from(io.sockets.sockets.values()).some(s => s.userId === u.telegramId);
             const status = isOnline ? "🟢 Online" : "🔴 Offline";
             
-            // Экранируем имя, чтобы символы < > & не ломали HTML
             const safeName = (u.username || u.firstName || 'Unknown')
                 .replace(/&/g, "&amp;")
                 .replace(/</g, "&lt;")
                 .replace(/>/g, "&gt;");
 
-            msg += `${i + 1}. ${safeName} | <code>${u.telegramId}</code> | <b>${u.balance.toFixed(2)} TON</b> | ${status}\n`;
+            msg += `${i + 1}. ${safeName} | <code>${u.telegramId}</code> | <b>${u.balance.toFixed(2)} TON</b> | ${status} | Ранг: ${u.rank}\n`;
         });
 
-        // Отправляем как HTML
         if (msg.length > 4000) {
             await ctx.replyWithHTML(msg.substring(0, 4000));
             await ctx.replyWithHTML(msg.substring(4000));
@@ -72,7 +131,6 @@ bot.command('stats', async (ctx) => {
     }
 });
 
-// 2. Проверка игрока: /check [ID]
 bot.command('check', async (ctx) => {
     if (!isAdmin(ctx)) return;
     const targetId = ctx.message.text.split(' ')[1];
@@ -85,11 +143,12 @@ bot.command('check', async (ctx) => {
         `👤 **Игрок:** ${u.username || u.firstName}\n` +
         `🆔 **ID:** \`${u.telegramId}\`\n` +
         `💎 **Баланс:** ${u.balance.toFixed(2)} TON\n` +
-        `🎮 **Игр:** ${u.stats.games} | **Побед:** ${u.stats.wins}`
+        `🏆 **Ранг:** ${u.rank}\n` +
+        `🎮 **Игр:** ${u.stats.games} | **Побед:** ${u.stats.wins}\n` +
+        `📦 **Статуй:** ${u.inventory.length}`
     );
 });
 
-// 3. Выдача баланса: /give [ID] [Сумма]
 bot.command('give', async (ctx) => {
     if (!isAdmin(ctx)) return;
     const [_, targetId, amountStr] = ctx.message.text.split(' ');
@@ -106,94 +165,217 @@ bot.command('give', async (ctx) => {
     );
 
     if (!u) return ctx.reply('Игрок не найден.');
-
-    // Моментально обновляем баланс на экране у игрока через socket
-    io.emit('balance_update_global', { telegramId: u.telegramId, newBalance: u.balance });
     
-    ctx.reply(`✅ Баланс игрока ${u.username || u.firstName} изменен на ${amount}. \nНовый баланс: ${u.balance.toFixed(2)} TON`);
+    u.updateRank();
+    await u.save();
+
+    io.emit('balance_update_global', { telegramId: u.telegramId, newBalance: u.balance, newRank: u.rank });
+    
+    ctx.reply(`✅ Баланс игрока ${u.username || u.firstName} изменен на ${amount}. \nНовый баланс: ${u.balance.toFixed(2)} TON, Ранг: ${u.rank}`);
 });
 
 bot.launch();
 
-
-
-// Схема пользователя
-const UserSchema = new mongoose.Schema({
-    telegramId: { type: Number, required: true, unique: true },
-    username: String,
-    firstName: String,
-    balance: { type: Number, default: 1000 },
-    inventory: [String], // Для картинок/призов
-    stats: { wins: { type: Number, default: 0 }, games: { type: Number, default: 0 } }
-});
-const User = mongoose.model('User', UserSchema);
-
 // --- ИГРОВЫЕ КОМНАТЫ (PvP) ---
-let rooms = {}; // { roomId: { players: [], pot: 0, status: 'waiting' } }
+let rooms = {};
 
 // --- API ROUTES ---
-
-// Авторизация / Создание профиля
 app.post('/api/auth', async (req, res) => {
     const { id, username, first_name } = req.body;
     try {
         let user = await User.findOne({ telegramId: id });
         if (!user) {
-            user = new User({ telegramId: id, username, firstName: first_name });
+            user = new User({ 
+                telegramId: id, 
+                username, 
+                firstName: first_name,
+                rank: id === ADMIN_ID ? 'Шейх' : 'Новичок',
+                rankColor: id === ADMIN_ID ? '#ff2d55' : '#8e8e93'
+            });
             await user.save();
         }
+        
+        user.updateRank();
+        await user.save();
+        
         res.json(user);
     } catch (e) {
         res.status(500).json({ error: 'Database error' });
     }
 });
 
-// Игра с ботами (Симуляция общего банка)
 app.post('/api/bot-game', async (req, res) => {
     const { id, bet } = req.body;
     
     const user = await User.findOne({ telegramId: id });
     if (!user || user.balance < bet) return res.json({ error: "Недостаточно средств" });
 
-    // Списываем ставку
     user.balance -= bet;
 
-    // Логика ботов: 3 бота тоже ставят ставки
-    const bots = [
-        { name: "Bot Alex", bet: bet },
-        { name: "Bot Maria", bet: bet },
-        { name: "Bot John", bet: bet }
-    ];
+    // Создаем ботов с цветами
+    const botNames = ['Alex', 'Maria', 'John', 'Emma', 'Mike', 'Sarah'];
+    const botColors = ['#FF2D55', '#007AFF', '#34C759', '#FF9500', '#9D4EDD', '#FFD700'];
     
-    const totalPot = bet * 4; // Банк (4 игрока по ставке)
+    const bots = [];
+    for (let i = 0; i < 5; i++) {
+        bots.push({
+            name: botNames[Math.floor(Math.random() * botNames.length)],
+            color: botColors[Math.floor(Math.random() * botColors.length)],
+            bet: bet
+        });
+    }
     
-    // Определяем победителя (Шанс 25% честный)
-    const participants = [user.username, ...bots.map(b => b.name)];
-    const winnerIndex = Math.floor(Math.random() * participants.length);
-    const winnerName = participants[winnerIndex];
-    const isWin = winnerIndex === 0; // 0 - это наш игрок
-
+    const totalPot = bet * (bots.length + 1);
+    
+    // Повышаем шанс выигрыша до 40%
+    const participants = [user, ...bots];
+    const userWinChance = 0.4;
+    
+    let winner;
+    if (Math.random() < userWinChance) {
+        winner = user;
+    } else {
+        winner = bots[Math.floor(Math.random() * bots.length)];
+    }
+    
+    const isWin = winner === user;
     let winAmount = 0;
+
     if (isWin) {
         winAmount = totalPot;
+        const collectionBonus = user.getCollectionBonus();
+        winAmount = Math.floor(winAmount * collectionBonus);
+        
         user.balance += winAmount;
         user.stats.wins++;
+        user.stats.totalWon += winAmount;
     }
+
+    // Шанс 5% на выпадение статуи
+    if (!isWin && Math.random() < 0.05) {
+        const randomStatue = STATUES[Math.floor(Math.random() * STATUES.length)];
+        const existingItem = user.inventory.find(i => i.statueId === randomStatue.id);
+        
+        if (existingItem) {
+            existingItem.count++;
+        } else {
+            user.inventory.push({ statueId: randomStatue.id, count: 1 });
+        }
+        
+        // Проверка на завершение коллекции
+        const collectionStatues = STATUES.map(s => s.id);
+        const hasAll = collectionStatues.every(statueId => 
+            user.inventory.some(i => i.statueId === statueId && i.count > 0)
+        );
+        
+        if (hasAll && !user.completedCollections.includes('all')) {
+            user.completedCollections.push('all');
+        }
+    }
+
     user.stats.games++;
+    user.stats.lastGames.push({
+        date: new Date(),
+        type: 'bot',
+        result: isWin ? 'win' : 'loss',
+        amount: isWin ? winAmount : -bet
+    });
+    
+    if (user.stats.lastGames.length > 10) {
+        user.stats.lastGames.shift();
+    }
+
+    user.updateRank();
     await user.save();
 
     res.json({
         isWin,
-        winner: winnerName,
+        winner: winner.name || winner.username,
+        winnerColor: winner.color || user.rankColor,
         pot: totalPot,
         newBalance: user.balance,
-        participants: participants,
-        stopAngle: Math.floor(Math.random() * 360) // Для анимации
+        participants: participants.map(p => ({
+            name: p.name || p.username,
+            color: p.color || p.rankColor
+        })),
+        stopAngle: Math.floor(Math.random() * 360),
+        newRank: user.rank,
+        droppedStatue: !isWin && Math.random() < 0.05 ? randomStatue : null
     });
 });
 
-// --- SOCKET.IO PVP ЛОГИКА ---
+app.get('/api/market', async (req, res) => {
+    try {
+        const users = await User.find();
+        const marketItems = [];
+        
+        users.forEach(user => {
+            user.inventory.forEach(item => {
+                const statue = STATUES.find(s => s.id === item.statueId);
+                if (statue && item.count > 0) {
+                    marketItems.push({
+                        id: `${user.telegramId}_${statue.id}`,
+                        sellerId: user.telegramId,
+                        sellerName: user.username || user.firstName,
+                        statue: statue,
+                        count: item.count,
+                        price: Math.floor(100 * (statue.rarity === 'legendary' ? 10 : statue.rarity === 'epic' ? 5 : 2))
+                    });
+                }
+            });
+        });
+        
+        res.json(marketItems);
+    } catch (e) {
+        res.status(500).json({ error: 'Database error' });
+    }
+});
 
+app.post('/api/market/buy', async (req, res) => {
+    const { buyerId, sellerId, statueId, price } = req.body;
+    
+    const session = await mongoose.startSession();
+    session.startTransaction();
+    
+    try {
+        const buyer = await User.findOne({ telegramId: buyerId }).session(session);
+        const seller = await User.findOne({ telegramId: sellerId }).session(session);
+        
+        if (!buyer || !seller) throw new Error('User not found');
+        if (buyer.balance < price) throw new Error('Insufficient funds');
+        
+        const sellerItem = seller.inventory.find(i => i.statueId === statueId);
+        if (!sellerItem || sellerItem.count < 1) throw new Error('Item not available');
+        
+        buyer.balance -= price;
+        seller.balance += price;
+        
+        sellerItem.count--;
+        if (sellerItem.count === 0) {
+            seller.inventory = seller.inventory.filter(i => i.statueId !== statueId);
+        }
+        
+        const buyerItem = buyer.inventory.find(i => i.statueId === statueId);
+        if (buyerItem) {
+            buyerItem.count++;
+        } else {
+            buyer.inventory.push({ statueId, count: 1 });
+        }
+        
+        await buyer.save();
+        await seller.save();
+        await session.commitTransaction();
+        
+        res.json({ success: true, newBalance: buyer.balance });
+    } catch (e) {
+        await session.abortTransaction();
+        res.status(400).json({ error: e.message });
+    } finally {
+        session.endSession();
+    }
+});
+
+// --- SOCKET.IO PVP ЛОГИКА ---
 io.on('connection', (socket) => {
     let currentRoomId = null;
     let currentUser = null;
@@ -204,33 +386,65 @@ io.on('connection', (socket) => {
         io.to('global_lobby').emit('online_count', io.engine.clientsCount);
     });
 
-    // 1. Создание комнаты
-    socket.on('create_room', (betAmount) => {
+    socket.on('create_room', async (betAmount) => {
+        const user = await User.findOne({ telegramId: currentUser.telegramId });
         const roomId = Math.random().toString(36).substring(2, 7).toUpperCase();
+        
+        const playerColor = user.rank === 'Шейх' ? '#ff2d55' : 
+                           user.rank === 'Инвестор' ? '#ffd700' :
+                           user.rank === 'Лудоман' ? '#29b6f6' : '#8e8e93';
+        
         rooms[roomId] = {
             id: roomId,
             creator: currentUser.telegramId,
             bet: betAmount,
-            players: [{ socketId: socket.id, user: currentUser, ready: false }],
+            players: [{
+                socketId: socket.id,
+                user: {
+                    ...currentUser,
+                    rank: user.rank,
+                    rankColor: user.rankColor,
+                    color: playerColor
+                },
+                ready: false
+            }],
             pot: 0,
-            status: 'waiting'
+            status: 'waiting',
+            playerColors: {}
         };
+        
+        rooms[roomId].playerColors[currentUser.telegramId] = playerColor;
         currentRoomId = roomId;
         socket.join(roomId);
         socket.emit('room_joined', rooms[roomId]);
         io.to('global_lobby').emit('update_rooms', getPublicRooms());
     });
 
-    // 2. Список комнат
     socket.on('get_rooms', () => {
         socket.emit('update_rooms', getPublicRooms());
     });
 
-    // 3. Вход в комнату
-    socket.on('join_room', (roomId) => {
+    socket.on('join_room', async (roomId) => {
         const room = rooms[roomId];
-        if (room && room.status === 'waiting' && room.players.length < 6) { // Макс 6 игроков
-            room.players.push({ socketId: socket.id, user: currentUser, ready: false });
+        const user = await User.findOne({ telegramId: currentUser.telegramId });
+        
+        if (room && room.status === 'waiting' && room.players.length < 6) {
+            const playerColor = user.rank === 'Шейх' ? '#ff2d55' : 
+                               user.rank === 'Инвестор' ? '#ffd700' :
+                               user.rank === 'Лудоман' ? '#29b6f6' : '#8e8e93';
+            
+            room.players.push({
+                socketId: socket.id,
+                user: {
+                    ...currentUser,
+                    rank: user.rank,
+                    rankColor: user.rankColor,
+                    color: playerColor
+                },
+                ready: false
+            });
+            
+            room.playerColors[currentUser.telegramId] = playerColor;
             currentRoomId = roomId;
             socket.join(roomId);
             io.to(roomId).emit('room_update', room);
@@ -240,23 +454,19 @@ io.on('connection', (socket) => {
         }
     });
 
-    // 4. Готовность и Ставка
     socket.on('player_ready', async () => {
         if (!currentRoomId || !rooms[currentRoomId]) return;
         const room = rooms[currentRoomId];
         
-        // Проверка баланса в БД
         const dbUser = await User.findOne({ telegramId: currentUser.telegramId });
         if (dbUser.balance < room.bet) {
             socket.emit('error', 'Недостаточно денег для ставки!');
             return;
         }
 
-        // Списываем деньги
         dbUser.balance -= room.bet;
         await dbUser.save();
 
-        // Обновляем статус в комнате
         const player = room.players.find(p => p.socketId === socket.id);
         player.ready = true;
         room.pot += room.bet;
@@ -264,16 +474,34 @@ io.on('connection', (socket) => {
         io.to(currentRoomId).emit('room_update', room);
         socket.emit('balance_update', dbUser.balance);
 
-        // Если все готовы - старт
-        if (room.players.every(p => p.ready) && room.players.length > 1) {
+        if (room.players.length >= 2 && room.players.every(p => p.ready)) {
             startPvPGame(room);
         }
+    });
+
+    socket.on('leave_room', () => {
+        if (currentRoomId && rooms[currentRoomId]) {
+            const room = rooms[currentRoomId];
+            room.players = room.players.filter(p => p.socketId !== socket.id);
+            delete room.playerColors[currentUser?.telegramId];
+            
+            if (room.players.length === 0) {
+                delete rooms[currentRoomId];
+            } else {
+                io.to(currentRoomId).emit('room_update', room);
+            }
+            io.to('global_lobby').emit('update_rooms', getPublicRooms());
+        }
+        currentRoomId = null;
+        socket.emit('left_room');
     });
 
     socket.on('disconnect', () => {
         if (currentRoomId && rooms[currentRoomId]) {
             const room = rooms[currentRoomId];
             room.players = room.players.filter(p => p.socketId !== socket.id);
+            delete room.playerColors[currentUser?.telegramId];
+            
             if (room.players.length === 0) {
                 delete rooms[currentRoomId];
             } else {
@@ -286,27 +514,58 @@ io.on('connection', (socket) => {
 
 async function startPvPGame(room) {
     room.status = 'playing';
-    io.to(room.id).emit('game_start', { pot: room.pot });
+    io.to(room.id).emit('game_start', { pot: room.pot, players: room.players });
 
-    // Крутим рулетку 4 секунды
     setTimeout(async () => {
         const winnerIndex = Math.floor(Math.random() * room.players.length);
         const winner = room.players[winnerIndex];
         
-        // Начисляем выигрыш
         const dbWinner = await User.findOne({ telegramId: winner.user.telegramId });
         dbWinner.balance += room.pot;
         dbWinner.stats.wins++;
+        dbWinner.stats.totalWon += room.pot;
+        dbWinner.stats.lastGames.push({
+            date: new Date(),
+            type: 'pvp',
+            result: 'win',
+            amount: room.pot
+        });
+        
+        dbWinner.updateRank();
         await dbWinner.save();
 
+        const loserUpdates = [];
+        room.players.forEach(async (p) => {
+            if (p.user.telegramId !== winner.user.telegramId) {
+                const loser = await User.findOne({ telegramId: p.user.telegramId });
+                if (loser) {
+                    loser.stats.lastGames.push({
+                        date: new Date(),
+                        type: 'pvp',
+                        result: 'loss',
+                        amount: -room.bet
+                    });
+                    loser.updateRank();
+                    loserUpdates.push(loser.save());
+                }
+            }
+        });
+        
+        await Promise.all(loserUpdates);
+
         io.to(room.id).emit('game_over', {
-            winner: winner.user,
-            prize: room.pot
+            winner: {
+                ...winner.user,
+                color: room.playerColors[winner.user.telegramId]
+            },
+            prize: room.pot,
+            playerColors: room.playerColors
         });
 
-        // Удаляем комнату после игры
-        delete rooms[room.id];
-        io.to('global_lobby').emit('update_rooms', getPublicRooms());
+        setTimeout(() => {
+            delete rooms[room.id];
+            io.to('global_lobby').emit('update_rooms', getPublicRooms());
+        }, 5000);
 
     }, 5000);
 }
@@ -314,7 +573,13 @@ async function startPvPGame(room) {
 function getPublicRooms() {
     return Object.values(rooms)
         .filter(r => r.status === 'waiting')
-        .map(r => ({ id: r.id, bet: r.bet, players: r.players.length, creator: r.players[0].user.username }));
+        .map(r => ({ 
+            id: r.id, 
+            bet: r.bet, 
+            players: r.players.length, 
+            creator: r.players[0].user.username,
+            creatorRank: r.players[0].user.rank
+        }));
 }
 
 server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
