@@ -16,14 +16,16 @@
                 <div id="username" style="font-weight: bold;">Loading...</div>
             </div>
             <div class="balance-badge">
+                <span id="rank-icon" style="font-size:16px;">🌱</span>
                 💎 <span id="balance">0</span> TON
             </div>
         </header>
 
+        <!-- ЭКРАН SPINS (ИГРА С БОТАМИ) -->
         <div id="screen-spins" class="screen active">
             <div class="wheel-container">
                 <canvas id="wheel" width="300" height="300"></canvas>
-                <div class="wheel-arrow">TAP!</div>
+                <div class="wheel-arrow">▼</div>
             </div>
             
             <div class="controls">
@@ -34,38 +36,60 @@
                 </div>
                 <button id="spinBtn" class="main-btn">SPIN FOR <span id="btnAmount">100</span> TON</button>
                 <div style="margin-top: 15px; font-size: 12px; color: #666;">
-                    Playing with 3 bots • Total Pot: x4
+                    🎲 Шанс 40% • 💎 Шанс статуи 5%
                 </div>
             </div>
         </div>
 
+        <!-- ЭКРАН PVP -->
         <div id="screen-pvp" class="screen">
-            <h2 style="margin-bottom: 10px;">Multiplayer Lobby</h2>
+            <h2 style="margin-bottom: 10px;">⚔️ PvP Лобби</h2>
             <div style="color: #666; font-size: 12px; margin-bottom: 20px;">
                 Online: <span id="onlineCount">0</span>
             </div>
 
             <button class="create-room-btn" onclick="createRoom()">
-                + Create Private Room (1000 TON)
+                + Создать комнату
             </button>
             
-            <h3 style="font-size: 14px; margin-bottom: 10px;">Public Rooms</h3>
-            <div id="roomList" class="room-list">
-                </div>
+            <h3 style="font-size: 14px; margin-bottom: 10px;">Открытые комнаты</h3>
+            <div id="roomList" class="room-list"></div>
         </div>
 
+        <!-- ЭКРАН КОМНАТЫ PVP -->
         <div id="screen-room" class="screen">
-            <button onclick="leaveRoom()" style="background:none; border:none; color:#666; margin-bottom:10px;">← Leave</button>
-            <h2 id="roomIdDisplay">Room #...</h2>
+            <button onclick="leaveRoom()" style="background:none; border:none; color:#007aff; margin-bottom:10px;">← Назад</button>
+            <h2 id="roomIdDisplay">Комната #...</h2>
             
             <div class="players-grid" id="playersGrid"></div>
             
+            <div id="pvp-wheel-container" style="display:none; margin:20px 0;">
+                <canvas id="pvp-wheel" width="300" height="300"></canvas>
+            </div>
+            
             <div style="margin-top: auto; padding: 20px 0;">
-                <div style="text-align: center; margin-bottom: 10px; color: #888;" id="roomStatus">Waiting for bets...</div>
-                <button id="readyBtn" class="main-btn" onclick="sendReady()">PLACE BET (1000)</button>
+                <div style="text-align: center; margin-bottom: 10px; color: #888;" id="roomStatus"></div>
+                <button id="readyBtn" class="main-btn" onclick="sendReady()">ГОТОВ</button>
             </div>
         </div>
 
+        <!-- ЭКРАН МАРКЕТА -->
+        <div id="screen-market" class="screen">
+            <h2 style="margin-bottom: 10px;">🛍️ Маркет</h2>
+            
+            <div id="userInventory" class="inventory-section"></div>
+            
+            <h3>Продажа статуй</h3>
+            <div id="marketList" class="market-list"></div>
+        </div>
+
+        <!-- ЭКРАН ПРОФИЛЯ -->
+        <div id="screen-profile" class="screen">
+            <h2 style="margin-bottom: 10px;">👤 Профиль</h2>
+            <div id="profileInfo" class="profile-info"></div>
+        </div>
+
+        <!-- НИЖНЯЯ НАВИГАЦИЯ -->
         <nav class="bottom-nav">
             <button class="nav-item active" onclick="switchTab('spins')">
                 <span class="nav-icon">🎁</span> Spins
@@ -73,21 +97,34 @@
             <button class="nav-item" onclick="switchTab('pvp')">
                 <span class="nav-icon">⚔️</span> PvP
             </button>
-            <button class="nav-item" onclick="alert('Market coming soon')">
+            <button class="nav-item" onclick="switchTab('market')">
                 <span class="nav-icon">🛍️</span> Market
             </button>
-            <button class="nav-item" onclick="alert('Profile coming soon')">
+            <button class="nav-item" onclick="switchTab('profile')">
                 <span class="nav-icon">👤</span> Profile
             </button>
         </nav>
     </div>
 
+    <!-- МОДАЛКА РЕЗУЛЬТАТА -->
     <div id="resultModal" class="modal-overlay">
         <div class="modal">
             <h2 id="modalTitle">YOU WON!</h2>
             <div id="modalAmount" class="win-amount">+400 TON</div>
             <p id="modalMsg" style="color:#888;">Winner: You</p>
-            <button class="main-btn" onclick="closeModal()">CLAIM</button>
+            <button class="main-btn" onclick="closeModal()">ПРИНЯТЬ</button>
+        </div>
+    </div>
+
+    <!-- МОДАЛКА СТАТУИ -->
+    <div id="statueModal" class="modal-overlay">
+        <div class="modal">
+            <h2 style="color:#ffd700;">✨ НАЙДЕНА СТАТУЯ!</h2>
+            <div style="font-size:48px; margin:10px 0;" id="statueEmoji"></div>
+            <div style="font-size:20px; font-weight:bold;" id="statueName"></div>
+            <div style="color:#666;" id="statueRarity"></div>
+            <div style="color:#34c759; margin:10px 0;" id="statueBonus"></div>
+            <button class="main-btn" onclick="closeModal()">ОТЛИЧНО!</button>
         </div>
     </div>
 
