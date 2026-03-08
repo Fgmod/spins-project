@@ -348,52 +348,49 @@ function switchTab(tab) {
 // ==========================================
 //  CASES
 // ==========================================
-let caseTimer = null;
 
-async function loadCases() {
+// All possible gifts for strip (used in animation)
+const STRIP_POOL = [
+    { id: 'neon_cat',        emoji: '🐱', name: 'Неоновый Кот',     rarity: 'common'    },
+    { id: 'moon_bunny',      emoji: '🐰', name: 'Лунный Кролик',    rarity: 'common'    },
+    { id: 'robot_buddy',     emoji: '🤖', name: 'Робот-Дружище',    rarity: 'common'    },
+    { id: 'prison_steve',    emoji: '⛓️', name: 'Тюремный Стив',    rarity: 'rare'      },
+    { id: 'rocket_frog',     emoji: '🐸', name: 'Ракетная Лягушка', rarity: 'rare'      },
+    { id: 'golden_star',     emoji: '⭐', name: 'Золотая Звезда',   rarity: 'rare'      },
+    { id: 'crystal_ball',    emoji: '🔮', name: 'Хрустальный Шар',  rarity: 'rare'      },
+    { id: 'space_helmet',    emoji: '🚀', name: 'Шлем Космонавта',  rarity: 'rare'      },
+    { id: 'cyber_bear',      emoji: '🐻', name: 'Кибер Медведь',    rarity: 'epic'      },
+    { id: 'diamond_hamster', emoji: '💎', name: 'Алмазный Хомяк',   rarity: 'epic'      },
+    { id: 'crypto_wolf',     emoji: '🐺', name: 'Крипто Волк',      rarity: 'epic'      },
+    { id: 'fire_phoenix',    emoji: '🦅', name: 'Огненный Феникс',  rarity: 'epic'      },
+    { id: 'gold_durov',      emoji: '🏆', name: 'Золотой Дуров',    rarity: 'legendary' },
+    { id: 'pixel_dragon',    emoji: '🐉', name: 'Пиксельный Дракон',rarity: 'legendary' },
+    { id: 'ton_king',        emoji: '👑', name: 'TON Король',        rarity: 'legendary' },
+];
+
+let caseAnimating = false;
+
+function loadCases() {
     const casesEl = document.getElementById('casesBalance');
     if (casesEl) casesEl.textContent = Math.floor(balance).toLocaleString('ru');
     renderCasesInventory();
-    await updateCaseStatus();
+    updateCaseBtn();
 }
 
-async function updateCaseStatus() {
-    try {
-        const res = await fetch(`/api/case-status/${user.id}`);
-        const data = await res.json();
-        const btn = document.getElementById('openCaseBtn');
-        const info = document.getElementById('caseCooldownInfo');
-
-        if (data.remaining > 0) {
-            if (btn) btn.disabled = true;
-            startCaseCountdown(data.remaining, btn, info);
-        } else {
-            if (btn) { btn.disabled = false; btn.textContent = 'Открыть за 500 🪙'; }
-            if (info) info.textContent = '';
-        }
-    } catch {}
-}
-
-function startCaseCountdown(remainingMs, btn, info) {
-    if (caseTimer) clearInterval(caseTimer);
-    function tick() {
-        if (remainingMs <= 0) {
-            clearInterval(caseTimer);
-            if (btn) { btn.disabled = false; btn.textContent = 'Открыть за 500 🪙'; }
-            if (info) info.textContent = '✅ Доступен!';
-            return;
-        }
-        const mins = Math.floor(remainingMs / 60000);
-        const secs = Math.floor((remainingMs % 60000) / 1000);
-        if (info) info.textContent = `⏰ Следующий через ${mins}м ${secs}с`;
-        if (btn) { btn.disabled = true; btn.textContent = 'Открыть за 500 🪙'; }
-        remainingMs -= 1000;
+function updateCaseBtn() {
+    const btn = document.getElementById('openCaseBtn');
+    if (!btn) return;
+    if (balance < 500) {
+        btn.disabled = true;
+        btn.textContent = 'Недостаточно монет 🪙';
+    } else {
+        btn.disabled = false;
+        btn.textContent = 'Открыть за 500 🪙';
     }
-    tick();
-    caseTimer = setInterval(tick, 1000);
 }
 
 async function openCase() {
+    if (caseAnimating) return;
     const btn = document.getElementById('openCaseBtn');
     if (btn) btn.disabled = true;
 
@@ -404,22 +401,216 @@ async function openCase() {
             body: JSON.stringify({ id: user.id })
         });
         const data = await res.json();
-        if (data.error) { showToast(data.error, 'error'); if (btn) btn.disabled = false; return; }
+        if (data.error) {
+            showToast(data.error, 'error');
+            if (btn) btn.disabled = false;
+            return;
+        }
 
         updateBalance(data.newBalance);
-        updateInventory(data.newInventory);
-        renderCasesInventory();
+        // Don't update inventory yet — wait for animation to finish
+        await playCaseAnimation(data.gift, () => {
+            updateInventory(data.newInventory);
+            renderCasesInventory();
+            updateCaseBtn();
+        });
 
-        // Show gift drop with keep decision
-        showGiftDropModal(data.gift, true);
-
-        // Update cooldown
-        await updateCaseStatus();
     } catch {
         showToast('Ошибка открытия кейса', 'error');
         if (btn) btn.disabled = false;
+        caseAnimating = false;
     }
 }
+
+function buildStripItems(targetGift) {
+    // Build a long strip: ~40 random items + winner at position ~35
+    const TOTAL = 42;
+    const WINNER_POS = 35;
+    const items = [];
+
+    // Weighted random from pool
+    function randomItem() {
+        const r = Math.random();
+        let pool;
+        if (r < 0.50)      pool = STRIP_POOL.filter(g => g.rarity === 'common');
+        else if (r < 0.80) pool = STRIP_POOL.filter(g => g.rarity === 'rare');
+        else if (r < 0.95) pool = STRIP_POOL.filter(g => g.rarity === 'epic');
+        else               pool = STRIP_POOL.filter(g => g.rarity === 'legendary');
+        return pool[Math.floor(Math.random() * pool.length)];
+    }
+
+    for (let i = 0; i < TOTAL; i++) {
+        items.push(i === WINNER_POS ? targetGift : randomItem());
+    }
+    return { items, winnerPos: WINNER_POS };
+}
+
+function renderStripItem(item) {
+    return `<div class="case-anim-item ${item.rarity}" data-id="${item.id}">
+        <span class="ai-emoji">${item.emoji}</span>
+        <span class="ai-name">${item.name}</span>
+    </div>`;
+}
+
+async function playCaseAnimation(wonGift, onComplete) {
+    caseAnimating = true;
+
+    const card      = document.getElementById('caseCard');
+    const animWrap  = document.getElementById('caseAnimWrap');
+    const track     = document.getElementById('caseAnimTrack');
+    const resultEl  = document.getElementById('caseResult');
+    const glow      = document.getElementById('caseBoxGlow');
+
+    // Pulse the box first
+    const boxWrap = document.getElementById('caseBoxWrap');
+    boxWrap.style.transform = 'scale(0.92)';
+    await sleep(120);
+    boxWrap.style.transform = '';
+
+    // Build strip
+    const { items, winnerPos } = buildStripItems(wonGift);
+    track.innerHTML = items.map(renderStripItem).join('');
+
+    // Show strip, hide card
+    resultEl.style.display = 'none';
+    card.style.display = 'none';
+    animWrap.style.display = 'block';
+
+    // Add center-line overlay
+    const outer = document.querySelector('.case-anim-track-outer');
+    if (!outer.querySelector('.center-line')) {
+        const cl = document.createElement('div');
+        cl.className = 'center-line';
+        outer.appendChild(cl);
+    }
+
+    // Measure item width
+    const itemEl    = track.children[0];
+    const itemW     = itemEl.offsetWidth + 8; // width + gap
+    const trackOuter = outer;
+    const centerOffset = trackOuter.offsetWidth / 2; // center of visible area
+
+    // Target: winner item center aligned to strip center
+    const targetTranslate = -(winnerPos * itemW - centerOffset + itemW / 2);
+
+    // Ease-out cubic animation
+    const DURATION = 5000;
+    const startX   = 0;
+    const endX     = targetTranslate;
+
+    let lastHighlightIdx = -1;
+
+    function easeOut(t) {
+        return 1 - Math.pow(1 - t, 4);
+    }
+
+    await new Promise(resolve => {
+        const startTime = performance.now();
+
+        function frame(now) {
+            const elapsed  = now - startTime;
+            const progress = Math.min(elapsed / DURATION, 1);
+            const eased    = easeOut(progress);
+            const currentX = startX + (endX - startX) * eased;
+
+            track.style.transform = `translateX(${currentX}px)`;
+
+            // Highlight item under center pointer
+            const centerInTrack = -currentX + centerOffset;
+            const idx = Math.floor(centerInTrack / itemW);
+            if (idx !== lastHighlightIdx && idx >= 0 && idx < items.length) {
+                lastHighlightIdx = idx;
+                // Remove all highlights
+                Array.from(track.children).forEach(el => {
+                    el.classList.remove('highlight-common', 'highlight-rare', 'highlight-epic', 'highlight-legendary');
+                });
+                const el = track.children[idx];
+                if (el) {
+                    const r = items[idx].rarity;
+                    el.classList.add(`highlight-${r}`);
+                    // Update box glow colour
+                    const glowColors = {
+                        common:    'rgba(142,142,147,0.25)',
+                        rare:      'rgba(59,158,222,0.3)',
+                        epic:      'rgba(175,82,222,0.35)',
+                        legendary: 'rgba(255,214,10,0.4)',
+                    };
+                    if (glow) {
+                        glow.style.background = `radial-gradient(ellipse at 50% 50%, ${glowColors[r]} 0%, transparent 70%)`;
+                        glow.style.opacity = '1';
+                    }
+                }
+            }
+
+            if (progress < 1) {
+                requestAnimationFrame(frame);
+            } else {
+                resolve();
+            }
+        }
+
+        requestAnimationFrame(frame);
+    });
+
+    // Final: highlight winner
+    Array.from(track.children).forEach(el =>
+        el.classList.remove('highlight-common', 'highlight-rare', 'highlight-epic', 'highlight-legendary')
+    );
+    const winnerEl = track.children[winnerPos];
+    if (winnerEl) {
+        winnerEl.classList.add(`highlight-${wonGift.rarity}`, 'winner');
+    }
+
+    await sleep(600);
+
+    // Show result card
+    animWrap.style.display = 'none';
+    const rarityColor = RARITY_COLORS[wonGift.rarity];
+    const rarityName  = RARITY_NAMES[wonGift.rarity];
+    resultEl.style.display  = 'block';
+    resultEl.style.border   = `1px solid ${rarityColor}44`;
+    resultEl.style.boxShadow = `0 0 30px ${rarityColor}33`;
+    resultEl.innerHTML = `
+        <div style="font-size:11px;letter-spacing:2px;color:${rarityColor};font-weight:700;margin-bottom:8px">✨ ВЫ ПОЛУЧИЛИ</div>
+        <div style="font-size:64px;margin:8px 0;filter:drop-shadow(0 0 20px ${rarityColor}88)">${wonGift.emoji}</div>
+        <div style="font-size:20px;font-weight:800;margin-bottom:4px">${wonGift.name}</div>
+        <div style="color:${rarityColor};font-size:13px;font-weight:700;margin-bottom:6px">${rarityName}</div>
+        <div style="color:var(--green);font-size:12px;margin-bottom:16px">+${wonGift.bonus}% к бонусам</div>
+        <div style="display:flex;gap:8px">
+            <button class="big-btn secondary-btn" style="flex:1;padding:12px" onclick="caseGiftDecide('sell','${wonGift.id}')">💰 Продать</button>
+            <button class="big-btn" style="flex:1;padding:12px" onclick="caseGiftDecide('keep','${wonGift.id}')">📦 Забрать</button>
+        </div>`;
+
+    card.style.display = 'block';
+    caseAnimating = false;
+
+    if (onComplete) onComplete();
+}
+
+async function caseGiftDecide(choice, giftId) {
+    const resultEl = document.getElementById('caseResult');
+    const gift = GIFTS.find(g => g.id === giftId);
+
+    if (choice === 'sell' && gift) {
+        try {
+            const res = await fetch('/api/market/list', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: user.id, statueId: giftId, price: gift.basePrice, count: 1 })
+            });
+            const data = await res.json();
+            if (data.error) { showToast(data.error, 'error'); }
+            else { updateInventory(data.newInventory); showToast(`💰 Выставлено за ${gift.basePrice} 🪙`, 'success'); }
+        } catch { showToast('Ошибка продажи', 'error'); }
+    } else {
+        showToast(`📦 ${gift?.name || 'Подарок'} добавлен в инвентарь!`, 'success');
+    }
+
+    if (resultEl) resultEl.style.display = 'none';
+    renderGiftBetList();
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 function renderCasesInventory() {
     const el = document.getElementById('casesInventory');
