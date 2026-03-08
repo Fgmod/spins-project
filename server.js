@@ -297,7 +297,6 @@ app.post('/api/bot-game', async (req, res) => {
 // ── CASES API ─────────────────────────────────────────────────────────────
 
 const CASE_COST = 500; // coins per case
-const CASE_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
 
 app.post('/api/open-case', async (req, res) => {
     try {
@@ -305,19 +304,11 @@ app.post('/api/open-case', async (req, res) => {
         const user = await User.findOne({ telegramId: id });
         if (!user) return res.status(404).json({ error: 'Пользователь не найден' });
 
-        // Check cooldown
-        const now = Date.now();
-        if (user.lastCaseTime && (now - user.lastCaseTime.getTime()) < CASE_COOLDOWN_MS) {
-            const remaining = CASE_COOLDOWN_MS - (now - user.lastCaseTime.getTime());
-            return res.json({ error: `Следующий кейс через ${Math.ceil(remaining / 60000)} мин.`, remaining });
-        }
-
         if (user.balance < CASE_COST) {
             return res.json({ error: `Недостаточно монет! Нужно ${CASE_COST} 🪙` });
         }
 
         user.balance -= CASE_COST;
-        user.lastCaseTime = new Date();
 
         const gift = rollCaseGift();
         const existing = user.inventory.find(i => i.statueId === gift.id);
@@ -334,11 +325,7 @@ app.get('/api/case-status/:id', async (req, res) => {
     try {
         const user = await User.findOne({ telegramId: req.params.id });
         if (!user) return res.status(404).json({ error: 'Not found' });
-        const now = Date.now();
-        const remaining = user.lastCaseTime
-            ? Math.max(0, CASE_COOLDOWN_MS - (now - user.lastCaseTime.getTime()))
-            : 0;
-        res.json({ remaining, balance: user.balance, caseCost: CASE_COST });
+        res.json({ remaining: 0, balance: user.balance, caseCost: CASE_COST });
     } catch { res.status(500).json({ error: 'Server error' }); }
 });
 
