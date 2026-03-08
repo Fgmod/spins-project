@@ -4,160 +4,223 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>SPINS</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
-    <div id="app">
-        <header class="header">
-            <div class="user-info">
-                <div style="font-size: 11px; opacity: 0.5; letter-spacing: 0.5px;">WELCOME</div>
-                <div id="username" style="font-weight: bold; font-size: 14px;">Loading...</div>
-            </div>
-            <div class="balance-badge">
-                <span id="rank-icon" style="font-size:15px;">🌱</span>
-                💎 <span id="balance">0</span> TON
-            </div>
-        </header>
+<div id="app">
 
-        <!-- ЭКРАН SPINS -->
-        <div id="screen-spins" class="screen active">
-            <div class="wheel-container">
-                <canvas id="wheel" width="300" height="300"></canvas>
+    <!-- HEADER -->
+    <header class="header">
+        <div class="header-left">
+            <div class="app-logo">SPINS</div>
+            <div id="username-display" class="user-name">Загрузка...</div>
+        </div>
+        <div class="header-right">
+            <div class="balance-pill">
+                <span class="balance-icon">🪙</span>
+                <span id="balance">0</span>
             </div>
+        </div>
+    </header>
 
-            <div class="controls">
-                <div class="bet-selector">
-                    <button class="bet-btn" onclick="changeBet(-100)">−</button>
-                    <div class="bet-display">
-                        <div style="font-size:10px; color:#666; margin-bottom:2px;">СТАВКА</div>
-                        <span id="currentBet" style="font-size:18px; font-weight:800">100</span>
-                        <span style="font-size:11px; color:#666"> TON</span>
-                    </div>
-                    <button class="bet-btn" onclick="changeBet(100)">+</button>
-                </div>
-                <button id="spinBtn" class="main-btn">
-                    🎰 КРУТИТЬ ЗА <span id="btnAmount">100</span> TON
-                </button>
-                <div class="spin-hint">
-                    🎲 Шанс победы 40% · ✨ Шанс статуи 5%
-                </div>
+    <!-- SCREEN: SPINS (bot game with gifts) -->
+    <div id="screen-spins" class="screen active">
+        <div class="wheel-wrap">
+            <div class="wheel-pointer">▼</div>
+            <canvas id="wheel" width="300" height="300"></canvas>
+        </div>
+
+        <div class="gift-bet-section">
+            <div class="section-label">🎁 Выберите подарок для ставки</div>
+            <div id="giftBetList" class="gift-bet-list">
+                <div class="empty-hint">Нет подарков. Откройте кейс!</div>
             </div>
         </div>
 
-        <!-- ЭКРАН PVP ЛОББИ -->
-        <div id="screen-pvp" class="screen">
-            <div class="pvp-header">
-                <h2>⚔️ PvP Лобби</h2>
-                <div class="online-badge">🟢 <span id="onlineCount">0</span> online</div>
-            </div>
-
-            <button class="create-room-btn" onclick="createRoom()">
-                <span style="font-size:20px">+</span> Создать комнату
+        <div class="spin-action">
+            <button id="spinBtn" class="big-btn" disabled>
+                🎰 КРУТИТЬ
             </button>
-
-            <div class="rooms-label">Открытые комнаты</div>
-            <div id="roomList" class="room-list">
-                <div class="empty-rooms">Нет комнат. Создайте первую!</div>
-            </div>
-        </div>
-
-        <!-- ЭКРАН КОМНАТЫ -->
-        <div id="screen-room" class="screen">
-            <div class="room-header">
-                <button class="back-btn" onclick="leaveRoom()">← Выйти</button>
-                <h2 id="roomIdDisplay">Комната #...</h2>
-            </div>
-
-            <div class="players-grid" id="playersGrid"></div>
-
-            <div id="pvp-wheel-container" style="display:none; text-align:center; margin:15px 0; position:relative;">
-                <canvas id="pvp-wheel" width="280" height="280"></canvas>
-            </div>
-
-            <div class="room-footer">
-                <div id="roomStatus" style="text-align:center; margin-bottom:12px; color:#888; font-size:13px;"></div>
-                <button id="readyBtn" class="main-btn" onclick="sendReady()">✅ ГОТОВ</button>
-            </div>
-        </div>
-
-        <!-- ЭКРАН МАРКЕТА -->
-        <div id="screen-market" class="screen">
-            <h2 style="margin-bottom:5px;">🛍️ Маркет</h2>
-            <p style="color:#666; font-size:12px; margin:0 0 15px;">Торгуйте статуями и получайте пассивный бонус</p>
-            <div id="userInventory" class="inventory-section"></div>
-            <div class="market-divider">
-                <span>Продажи других игроков</span>
-            </div>
-            <div id="marketList" class="market-list"></div>
-        </div>
-
-        <!-- ЭКРАН ПРОФИЛЯ -->
-        <div id="screen-profile" class="screen">
-            <div id="profileInfo"></div>
-        </div>
-
-        <!-- НИЖНЯЯ НАВИГАЦИЯ -->
-        <nav class="bottom-nav">
-            <button class="nav-item active" onclick="switchTab('spins')">
-                <span class="nav-icon">🎰</span>
-                <span>Spins</span>
-            </button>
-            <button class="nav-item" onclick="switchTab('pvp')">
-                <span class="nav-icon">⚔️</span>
-                <span>PvP</span>
-            </button>
-            <button class="nav-item" onclick="switchTab('market')">
-                <span class="nav-icon">🛍️</span>
-                <span>Market</span>
-            </button>
-            <button class="nav-item" onclick="switchTab('profile')">
-                <span class="nav-icon">👤</span>
-                <span>Profile</span>
-            </button>
-        </nav>
-    </div>
-
-    <!-- МОДАЛКА РЕЗУЛЬТАТА -->
-    <div id="resultModal" class="modal-overlay">
-        <div class="modal">
-            <h2 id="modalTitle">ТЫ ПОБЕДИЛ!</h2>
-            <div id="modalAmount" class="win-amount">+400 TON</div>
-            <p id="modalMsg" style="color:#888; margin:10px 0;"></p>
-            <button class="main-btn" onclick="closeModal()">OK</button>
+            <div class="spin-hint">Победа 40% · Бонусный подарок 5% · Монеты 8%</div>
         </div>
     </div>
 
-    <!-- МОДАЛКА СТАТУИ -->
-    <div id="statueModal" class="modal-overlay">
-        <div class="modal statue-modal">
-            <div class="statue-glow"></div>
-            <div style="font-size:11px; letter-spacing:2px; color:#ffd700; opacity:0.8; margin-bottom:8px;">✨ РЕДКАЯ НАХОДКА</div>
-            <div style="font-size:64px; margin:10px 0; filter:drop-shadow(0 0 20px rgba(255,215,0,0.6))" id="statueEmoji"></div>
-            <div style="font-size:22px; font-weight:800; margin-bottom:4px;" id="statueName"></div>
-            <div style="font-size:13px; margin-bottom:8px;" id="statueRarity"></div>
-            <div style="color:#34c759; font-size:14px; margin-bottom:20px;" id="statueBonus"></div>
-            <button class="main-btn" onclick="closeModal()">ЗАБРАТЬ!</button>
+    <!-- SCREEN: PVP LOBBY -->
+    <div id="screen-pvp" class="screen">
+        <div class="screen-header-row">
+            <h2 class="screen-title">⚔️ PvP</h2>
+            <div class="online-pill">🟢 <span id="onlineCount">0</span> online</div>
+        </div>
+
+        <button class="create-room-btn" onclick="showCreateRoomModal()">
+            <span class="plus-icon">+</span>
+            Создать комнату
+        </button>
+
+        <div class="section-label" style="margin-top:12px">Открытые комнаты</div>
+        <div id="roomList" class="room-list">
+            <div class="empty-state">Нет комнат — создайте первую!</div>
         </div>
     </div>
 
-    <!-- МОДАЛКА СОЗДАНИЯ КОМНАТЫ -->
-    <div id="createRoomModal" class="modal-overlay">
-        <div class="modal">
-            <h2 style="margin-bottom:15px;">🎮 Создать комнату</h2>
-            <div style="margin-bottom:15px;">
-                <label style="font-size:13px; color:#888; display:block; margin-bottom:6px;">Ставка (TON)</label>
-                <input id="roomBetInput" type="number" min="100" step="100" value="500"
-                    style="width:100%; padding:12px; background:#222; border:1px solid #444; border-radius:10px; color:#fff; font-size:18px; font-weight:bold; text-align:center; box-sizing:border-box;">
-            </div>
-            <div style="display:flex; gap:10px;">
-                <button onclick="closeModal()" style="flex:1; padding:14px; background:#333; border:none; border-radius:12px; color:#fff; cursor:pointer;">Отмена</button>
-                <button onclick="confirmCreateRoom()" class="main-btn" style="flex:2;">Создать</button>
-            </div>
+    <!-- SCREEN: ROOM -->
+    <div id="screen-room" class="screen">
+        <div class="room-topbar">
+            <button class="back-link" onclick="leaveRoom()">← Выйти</button>
+            <span id="roomIdDisplay">Комната</span>
+            <div style="width:60px"></div>
+        </div>
+
+        <div class="room-bet-info" id="roomBetInfo"></div>
+
+        <div id="playersGrid" class="players-grid"></div>
+
+        <div id="pvp-wheel-container" style="display:none; text-align:center; margin:16px 0; position:relative;">
+            <canvas id="pvp-wheel" width="260" height="260"></canvas>
+        </div>
+
+        <div id="roomStatus" class="room-status-text"></div>
+
+        <div class="room-footer">
+            <button id="readyBtn" class="big-btn" onclick="sendReady()">✅ Готов</button>
+            <button id="startBtn" class="big-btn secondary-btn" onclick="forceStart()" style="display:none">▶ Начать игру</button>
         </div>
     </div>
 
-    <script src="app.js"></script>
+    <!-- SCREEN: CASES -->
+    <div id="screen-cases" class="screen">
+        <div class="screen-header-row">
+            <h2 class="screen-title">📦 Кейсы</h2>
+            <div class="coins-pill">🪙 <span id="casesBalance">0</span></div>
+        </div>
+
+        <div class="case-card">
+            <div class="case-emoji">🎁</div>
+            <div class="case-title">Случайный подарок</div>
+            <div class="case-desc">Шанс получить редкий и легендарный подарок!</div>
+            <div class="case-rarity-row">
+                <span class="rarity-badge common">Обычный 50%</span>
+                <span class="rarity-badge rare">Редкий 30%</span>
+                <span class="rarity-badge epic">Эпик 15%</span>
+                <span class="rarity-badge legendary">Легенда 5%</span>
+            </div>
+            <div id="caseCooldownInfo" class="case-cooldown"></div>
+            <button id="openCaseBtn" class="big-btn" onclick="openCase()">
+                Открыть за 500 🪙
+            </button>
+        </div>
+
+        <div class="section-label" style="margin-top:20px">Ваши подарки</div>
+        <div id="casesInventory" class="gifts-grid"></div>
+    </div>
+
+    <!-- SCREEN: MARKET -->
+    <div id="screen-market" class="screen">
+        <div class="screen-header-row">
+            <h2 class="screen-title">🛍️ Маркет</h2>
+            <button class="sell-btn-header" onclick="showSellModal()">+ Продать</button>
+        </div>
+
+        <div class="section-label">Ваши подарки</div>
+        <div id="myInventoryMarket" class="gifts-grid" style="margin-bottom:16px"></div>
+
+        <div class="section-label">Магазин игроков</div>
+        <div id="marketList" class="market-list"></div>
+    </div>
+
+    <!-- SCREEN: PROFILE -->
+    <div id="screen-profile" class="screen">
+        <div id="profileInfo" class="profile-content"></div>
+    </div>
+
+    <!-- NAV -->
+    <nav class="bottom-nav">
+        <button class="nav-item active" onclick="switchTab('spins')" data-tab="spins">
+            <span class="nav-icon">🎰</span><span>Spins</span>
+        </button>
+        <button class="nav-item" onclick="switchTab('pvp')" data-tab="pvp">
+            <span class="nav-icon">⚔️</span><span>PvP</span>
+        </button>
+        <button class="nav-item" onclick="switchTab('cases')" data-tab="cases">
+            <span class="nav-icon">📦</span><span>Кейсы</span>
+        </button>
+        <button class="nav-item" onclick="switchTab('market')" data-tab="market">
+            <span class="nav-icon">🛍️</span><span>Маркет</span>
+        </button>
+        <button class="nav-item" onclick="switchTab('profile')" data-tab="profile">
+            <span class="nav-icon">👤</span><span>Профиль</span>
+        </button>
+    </nav>
+</div>
+
+<!-- MODAL: WIN/LOSE -->
+<div id="resultModal" class="modal-overlay" onclick="closeModal('resultModal')">
+    <div class="modal-box" onclick="event.stopPropagation()">
+        <div id="modalEmoji" style="font-size:56px;margin-bottom:8px">🏆</div>
+        <div id="modalTitle" class="modal-title">ТЫ ПОБЕДИЛ!</div>
+        <div id="modalSub" class="modal-sub"></div>
+        <button class="big-btn" onclick="closeModal('resultModal')" style="margin-top:20px">OK</button>
+    </div>
+</div>
+
+<!-- MODAL: GIFT DROP -->
+<div id="giftModal" class="modal-overlay" onclick="closeModal('giftModal')">
+    <div class="modal-box gift-modal-box" onclick="event.stopPropagation()">
+        <div class="gift-drop-label">✨ ВЫПАЛ ПОДАРОК</div>
+        <div id="giftModalEmoji" style="font-size:72px;margin:12px 0;filter:drop-shadow(0 0 20px rgba(255,215,0,0.5))">🎁</div>
+        <div id="giftModalName" class="modal-title"></div>
+        <div id="giftModalRarity" class="modal-sub"></div>
+        <div id="giftModalBonus" style="color:#34c759;font-size:13px;margin-top:4px"></div>
+        <div style="display:flex;gap:10px;margin-top:20px">
+            <button class="big-btn secondary-btn" style="flex:1" onclick="handleGiftDecision('sell')">💰 Продать</button>
+            <button class="big-btn" style="flex:1" onclick="handleGiftDecision('keep')">📦 Забрать</button>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL: CREATE ROOM -->
+<div id="createRoomModal" class="modal-overlay" onclick="closeModal('createRoomModal')">
+    <div class="modal-box" onclick="event.stopPropagation()">
+        <div class="modal-title" style="margin-bottom:16px">🎮 Новая комната</div>
+
+        <div class="field-label">Подарок-ставка (из инвентаря)</div>
+        <div id="roomGiftSelect" class="gift-select-list"></div>
+
+        <div class="field-label" style="margin-top:14px">Макс. игроков</div>
+        <div class="max-players-row">
+            <button class="count-btn" onclick="changeMaxPlayers(-1)">−</button>
+            <span id="maxPlayersVal">6</span>
+            <button class="count-btn" onclick="changeMaxPlayers(1)">+</button>
+        </div>
+
+        <div style="display:flex;gap:10px;margin-top:20px">
+            <button class="big-btn secondary-btn" style="flex:1" onclick="closeModal('createRoomModal')">Отмена</button>
+            <button class="big-btn" style="flex:2" onclick="confirmCreateRoom()">Создать</button>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL: SELL GIFT -->
+<div id="sellModal" class="modal-overlay" onclick="closeModal('sellModal')">
+    <div class="modal-box" onclick="event.stopPropagation()">
+        <div class="modal-title" style="margin-bottom:16px">💰 Продать подарок</div>
+        <div id="sellGiftSelect" class="gift-select-list"></div>
+        <div class="field-label" style="margin-top:14px">Цена (🪙 монеты)</div>
+        <input id="sellPriceInput" type="number" min="1" value="500" class="text-input" placeholder="Введите цену">
+        <div style="display:flex;gap:10px;margin-top:16px">
+            <button class="big-btn secondary-btn" style="flex:1" onclick="closeModal('sellModal')">Отмена</button>
+            <button class="big-btn" style="flex:2" onclick="confirmSell()">Выставить</button>
+        </div>
+    </div>
+</div>
+
+<!-- TOAST -->
+<div id="toastContainer"></div>
+
+<script src="app.js"></script>
 </body>
 </html>
