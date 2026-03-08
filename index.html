@@ -98,21 +98,35 @@
             <div class="coins-pill">🪙 <span id="casesBalance">0</span></div>
         </div>
 
-        <div class="case-card">
-            <div class="case-emoji">🎁</div>
-            <div class="case-title">Случайный подарок</div>
-            <div class="case-desc">Шанс получить редкий и легендарный подарок!</div>
-            <div class="case-rarity-row">
-                <span class="rarity-badge common">Обычный 50%</span>
-                <span class="rarity-badge rare">Редкий 30%</span>
-                <span class="rarity-badge epic">Эпик 15%</span>
-                <span class="rarity-badge legendary">Легенда 5%</span>
+        <!-- CASE BOX -->
+        <div class="case-card" id="caseCard">
+            <div class="case-box-wrap" id="caseBoxWrap" onclick="openCase()">
+                <div class="case-box-glow" id="caseBoxGlow"></div>
+                <div class="case-box-icon">🎁</div>
+                <div class="case-box-label">Нажмите чтобы открыть</div>
             </div>
-            <div id="caseCooldownInfo" class="case-cooldown"></div>
+            <div class="case-rarity-row">
+                <span class="rarity-badge common">50%</span>
+                <span class="rarity-badge rare">30%</span>
+                <span class="rarity-badge epic">15%</span>
+                <span class="rarity-badge legendary">5%</span>
+            </div>
             <button id="openCaseBtn" class="big-btn" onclick="openCase()">
                 Открыть за 500 🪙
             </button>
         </div>
+
+        <!-- CASE ANIMATION STRIP -->
+        <div id="caseAnimWrap" class="case-anim-wrap" style="display:none">
+            <div class="case-anim-pointer">▼</div>
+            <div class="case-anim-track-outer">
+                <div class="case-anim-track" id="caseAnimTrack"></div>
+            </div>
+            <div class="case-anim-pointer bottom">▲</div>
+        </div>
+
+        <!-- RESULT -->
+        <div id="caseResult" class="case-result" style="display:none"></div>
 
         <div class="section-label" style="margin-top:20px">Ваши подарки</div>
         <div id="casesInventory" class="gifts-grid"></div>
